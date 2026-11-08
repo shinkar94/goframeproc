@@ -4,8 +4,8 @@ import (
 	"errors"
 	"image"
 
-	"github.com/shinkar94/frameproc/pkg/constants"
-	resize "github.com/shinkar94/frameproc/pkg/resize"
+	"github.com/shinkar94/goframeproc/pkg/constants"
+	resize "github.com/shinkar94/goframeproc/pkg/resize"
 )
 
 // Validation errors

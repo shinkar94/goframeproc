@@ -1,7 +1,7 @@
 package resize
 
 import (
-	"github.com/shinkar94/frameproc/pkg/constants"
+	"github.com/shinkar94/goframeproc/pkg/constants"
 	"runtime"
 	"sync"
 )
