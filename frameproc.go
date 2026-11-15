@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/shinkar94/goframeproc/pkg/constants"
+	"github.com/shinkar94/goframeproc/pkg/simd"
 	resize "github.com/shinkar94/goframeproc/pkg/resize"
 )
 
@@ -159,6 +160,22 @@ func ProcessFrameInto(dst []byte, buffer []byte, width, height int, stride int, 
 }
 
 func convertFormatInto(dst, src []byte, pixelCount int, parallel bool) {
+	if pixelCount >= 8 {
+		bytes := pixelCount * 4
+		if simd.HaveAVX2() {
+			full := bytes &^ 31
+			simd.SwapAVX2(src[:full], dst[:full])
+			tailSwap(dst[full:], src[full:])
+			return
+		}
+		if simd.HaveSSSE3() {
+			full := bytes &^ 15
+			simd.SwapSSE(src[:full], dst[:full])
+			tailSwap(dst[full:], src[full:])
+			return
+		}
+	}
+
 	swap := func(start, end int) {
 		for i := start; i < end; i++ {
 			v := binary.LittleEndian.Uint32(src[i*4 : i*4+4])
@@ -197,4 +214,11 @@ func convertFormatInto(dst, src []byte, pixelCount int, parallel bool) {
 		return
 	}
 	swap(0, pixelCount)
+}
+
+func tailSwap(dst, src []byte) {
+	for i := 0; i+4 <= len(src); i += 4 {
+		v := binary.LittleEndian.Uint32(src[i : i+4])
+		binary.LittleEndian.PutUint32(dst[i:i+4], (v&0xFF00FF00)|((v&0x00FF0000)>>16)|((v&0x000000FF)<<16))
+	}
 }

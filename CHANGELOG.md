@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.4.0 (uncommitted — under review)
+
+### Added
+- **Native SIMD conversion backend** (`pkg/simd`): AVX2/SSE4 `pshufb` kernels written in Go assembly with runtime CPUID dispatch (AVX2 > SSSE3 > scalar fallback, OS YMM-state check via XGETBV). `convertFormatInto` uses it automatically for frames ≥ 8 pixels; `saving` and `performance` modes both benefit since SIMD works on a single core.
+- Regression test `TestConvertSIMDMatchesScalar` (byte-identical output across all vector boundary sizes) and A/B benchmarks.
+
+### Measurements (i5-12450H, 1080p BGRA→RGBA)
+
+| Path | v0.3.0 | v0.4.0 |
+|---|---|---|
+| Convert, 1 core (scalar ref vs SIMD kernel) | 2.07 ms | **0.58 ms (×3.6)** |
+| Live stream 1080p original, GOMAXPROCS=2 (weak PC) | ~2.1 ms | **~1.05 ms (×2.0)** |
+| Live stream 1080p original, 12 cores | 1.02 ms | 1.00 ms (parallel scalar was already memory-bound) |
+
 ## v0.3.0 (uncommitted — under review)
 
 ### Fixed
