@@ -226,17 +226,16 @@ func resizeBilinear(startY, endY int, src, dst []byte, srcLen, stride, targetW i
 	}
 }
 
-// fx, fy are guaranteed to be in the range [0, 65536] after PrecomputeLookupTables
 func bilinearInterp(c00, c10, c01, c11 uint8, fx, fy uint32) uint8 {
 	invFx := 65536 - fx
 	invFy := 65536 - fy
 
-	w00 := invFx * invFy
 	w10 := fx * invFy
 	w01 := invFx * fy
 	w11 := fx * fy
+	w00 := uint64(1<<32) - uint64(w10) - uint64(w01) - uint64(w11)
 
-	sum := uint64(c00)*uint64(w00) +
+	sum := uint64(c00)*w00 +
 		uint64(c10)*uint64(w10) +
 		uint64(c01)*uint64(w01) +
 		uint64(c11)*uint64(w11)
