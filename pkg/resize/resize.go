@@ -15,11 +15,31 @@ const (
 
 const BytesPerPixel = constants.BytesPerPixel
 
+var tablesCache sync.Map // tablesCacheKey -> *LookupTables
+
+type tablesCacheKey struct {
+	srcW, srcH, targetW, targetH, stride int
+}
+
+func lookupTablesCached(srcW, srcH, targetW, targetH, stride int) *LookupTables {
+	key := tablesCacheKey{srcW, srcH, targetW, targetH, stride}
+	if t, ok := tablesCache.Load(key); ok {
+		return t.(*LookupTables)
+	}
+	t := PrecomputeLookupTables(srcW, srcH, targetW, targetH, stride)
+	tablesCache.Store(key, t)
+	return t
+}
+
 func ResizeGeneric(src []byte, srcW, srcH, stride, targetW, targetH int, mode Mode, format string, resizeStrategy ResizeStrategy, inputFormat string) []byte {
 	dst := make([]byte, targetW*targetH*constants.BytesPerPixel)
+	return ResizeGenericInto(dst, src, srcW, srcH, stride, targetW, targetH, mode, format, resizeStrategy, inputFormat)
+}
 
-	// We pre-calculate tables ONCE before processing.
-	tables := PrecomputeLookupTables(srcW, srcH, targetW, targetH, stride)
+func ResizeGenericInto(dst []byte, src []byte, srcW, srcH, stride, targetW, targetH int, mode Mode, format string, resizeStrategy ResizeStrategy, inputFormat string) []byte {
+	dst = dst[:targetW*targetH*constants.BytesPerPixel]
+
+	tables := lookupTablesCached(srcW, srcH, targetW, targetH, stride)
 
 	params := ResizeParams{
 		Src:         src,

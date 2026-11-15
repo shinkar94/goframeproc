@@ -1,8 +1,11 @@
 package frameproc
 
 import (
+	"encoding/binary"
 	"errors"
 	"image"
+	"runtime"
+	"sync"
 
 	"github.com/shinkar94/goframeproc/pkg/constants"
 	resize "github.com/shinkar94/goframeproc/pkg/resize"
@@ -117,6 +120,10 @@ func ResolveResolution(res constants.ResolutionPreset, w, h int) (int, int) {
 }
 
 func ProcessFrame(buffer []byte, width, height int, stride int, opts CompressionOptions) ([]byte, error) {
+	return ProcessFrameInto(nil, buffer, width, height, stride, opts)
+}
+
+func ProcessFrameInto(dst []byte, buffer []byte, width, height int, stride int, opts CompressionOptions) ([]byte, error) {
 	if len(buffer) == 0 {
 		return nil, ErrEmptyBuffer
 	}
@@ -125,14 +132,20 @@ func ProcessFrame(buffer []byte, width, height int, stride int, opts Compression
 	}
 
 	targetW, targetH := resolveResolution(opts.Resolution, width, height)
+	needed := targetW * targetH * resize.BytesPerPixel
+
+	if cap(dst) < needed {
+		dst = make([]byte, needed)
+	}
+	dst = dst[:needed]
 
 	if targetW == width && targetH == height {
 		if opts.InputFormat == opts.OutputFormat {
-			result := make([]byte, len(buffer))
-			copy(result, buffer)
-			return result, nil
+			copy(dst, buffer)
+			return dst, nil
 		}
-		return convertFormat(buffer, width*height), nil
+		convertFormatInto(dst, buffer, width*height, opts.PerformanceMode == "performance")
+		return dst, nil
 	}
 
 	var resizeStrategy resize.ResizeStrategy
@@ -142,20 +155,46 @@ func ProcessFrame(buffer []byte, width, height int, stride int, opts Compression
 		resizeStrategy = resize.SequentialResizeStrategy{}
 	}
 
-	resized := resize.ResizeGeneric(buffer, width, height, stride, targetW, targetH, opts.Mode, opts.OutputFormat, resizeStrategy, opts.InputFormat)
-	return resized, nil
+	return resize.ResizeGenericInto(dst, buffer, width, height, stride, targetW, targetH, opts.Mode, opts.OutputFormat, resizeStrategy, opts.InputFormat), nil
 }
 
-func convertFormat(buffer []byte, pixelCount int) []byte {
-	result := make([]byte, pixelCount*4)
-
-	for i := 0; i < pixelCount; i++ {
-		idx := i * 4
-		result[idx] = buffer[idx+2]
-		result[idx+1] = buffer[idx+1]
-		result[idx+2] = buffer[idx]
-		result[idx+3] = buffer[idx+3]
+func convertFormatInto(dst, src []byte, pixelCount int, parallel bool) {
+	swap := func(start, end int) {
+		for i := start; i < end; i++ {
+			v := binary.LittleEndian.Uint32(src[i*4 : i*4+4])
+			binary.LittleEndian.PutUint32(dst[i*4:i*4+4], (v&0xFF00FF00)|((v&0x00FF0000)>>16)|((v&0x000000FF)<<16))
+		}
 	}
 
-	return result
+	if !parallel || pixelCount < 480000 {
+		swap(0, pixelCount)
+		return
+	}
+
+	workers := runtime.GOMAXPROCS(0)
+	if workers > 8 {
+		workers = 8
+	}
+	if workers > 1 {
+		chunk := (pixelCount + workers - 1) / workers
+		var wg sync.WaitGroup
+		for w := 0; w < workers; w++ {
+			start := w * chunk
+			if start >= pixelCount {
+				break
+			}
+			end := start + chunk
+			if end > pixelCount {
+				end = pixelCount
+			}
+			wg.Add(1)
+			go func(start, end int) {
+				defer wg.Done()
+				swap(start, end)
+			}(start, end)
+		}
+		wg.Wait()
+		return
+	}
+	swap(0, pixelCount)
 }
