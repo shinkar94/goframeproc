@@ -1,6 +1,6 @@
 # GoFrameProc
 
-**Version:** v0.3.0
+**Version:** v0.5.0
 
 High-performance library for video frame processing in Go with support for resizing and pixel format conversion.
 
@@ -11,17 +11,18 @@ This package was specifically designed as a complementary addition to the [githu
 - **Image resizing** with two interpolation algorithms:
   - `Nearest` — fast, no smoothing
   - `Bilinear` — high quality, with smooth transitions
-- **Pixel format conversion**: RGBA ↔ BGRA (32-bit word swap, parallel in `performance` mode)
+- **Fixed-ratio 3:2 downscale** (`Ratio32`): libyuv-style SIMD kernels for the exact 3:2 ratio (1920×1080 → 1280×720 and any 3:2 multiples) — bilinear in 1.6 ms instead of 7.9 ms on one core, nearest in 1.3 ms (see Benchmarks)
+- **Pixel format conversion**: RGBA ↔ BGRA — native SIMD backend (AVX2/SSE `pshufb` with runtime CPU dispatch, scalar fallback), parallel word-swap in `performance` mode
 - **Resolution presets**: 320p, 420p, 720p, 1080p, original
 - **Two performance strategies**:
   - `SequentialResizeStrategy` — single-threaded (CPU efficient)
   - `ParallelResizeStrategy` — multi-threaded (maximum speed)
-- **Zero-allocation processing** via `ProcessFrameInto` with a reused output buffer
+- **Zero-allocation processing** via `ProcessFrameInto` with a reused output buffer; the `Ratio32` plan is allocation-free per frame as well
 
 ## Installation
 
 ```bash
-go get github.com/shinkar94/goframeproc@v0.3.0
+go get github.com/shinkar94/goframeproc@v0.5.0
 ```
 
 ## Usage
@@ -92,6 +93,26 @@ result := resize.ResizeGeneric(
 )
 ```
 
+### Fixed-ratio 3:2 downscale (fastest 1080p → 720p path)
+
+```go
+import "github.com/shinkar94/goframeproc/pkg/resize"
+
+// Build the plan once (returns nil unless the target is exactly 3:2 of
+// the source — then fall back to ResizeGenericInto).
+plan := resize.NewRatio32(1920, 1080, 1920*4, 1280, 720)
+if plan != nil {
+    dstBGRA := make([]byte, 1280*720*4)
+    for range ticker.C {
+        // Allocation-free per frame: bilinear SIMD (pshufb + VPAVGB) or
+        // plan.IntoNearest(dstBGRA, src) for the nearest variant.
+        plan.Into(dstBGRA, src)
+    }
+}
+```
+
+Note: the fixed-ratio kernels use the exact-ratio mapping (`src = 3/2 * dst`), not the edge-to-edge mapping of the generic path — positions drift by up to 0.5 px near the right/bottom edge. The generic path keeps its semantics unchanged.
+
 ## Resolution Presets
 
 | Preset | Landscape | Portrait |
@@ -115,6 +136,8 @@ The general tradeoff: **smaller output frame → less CPU, memory and bandwidth,
 
 Reference presets: Weak PC (320p/Nearest/saving), Office PC (720p/Nearest/saving), Balanced (720p/Bilinear/performance), Strong PC (original/Bilinear/performance).
 
+**1080p → 720p fast path**: when the source is exactly 3:2 of the target (e.g. 1920×1080 → 1280×720), the `Ratio32` plan (see below) is 3–5× faster than the generic bilinear path on one core and beats even the multi-threaded generic path while using a single core — ideal for `saving` mode and weak machines.
+
 ## Architecture
 
 ```
@@ -124,11 +147,17 @@ goframeproc/
 ├── bench_test.go         # Benchmarks (including GOMAXPROCS=2 weak-machine profile)
 ├── pkg/
 │   ├── constants/
-│   │   └── constants.go  # Format and preset constants
+│   │   └── constants.go     # Format and preset constants
+│   ├── simd/
+│   │   ├── cpu_amd64.go     # Cached CPU feature detection (CPUID + XGETBV at init)
+│   │   ├── swap_amd64.go/.s # SIMD BGRA->RGBA swap (AVX2/SSE pshufb, scalar fallback)
+│   │   └── swap_other.go    # Portable fallbacks
 │   └── resize/
 │       ├── resize.go         # Entry point ResizeGeneric / ResizeGenericInto
 │       ├── resize-common.go  # Core: interpolation, lookup tables
+│       ├── ratio32*.go/.s    # Fixed-ratio 3:2 SIMD kernels (bilinear + nearest)
 │       ├── resize_test.go    # Interpolation unit tests
+│       ├── ratio32_test.go   # Fixed-ratio regression tests and benchmarks
 │       └── types.go          # Types and interfaces
 ```
 
@@ -155,19 +184,34 @@ goframeproc/
 
 5. **Zero allocations in steady state**
    - `ProcessFrameInto` + reused output buffer
-   - BGRA↔RGBA conversion via 32-bit word swaps (parallel up to 8 workers in `performance` mode)
+   - BGRA↔RGBA conversion via SIMD `pshufb` swap (AVX2/SSE, since v0.4.0; scalar fallback on older CPUs)
+   - `Ratio32` plans hold the intermediate buffer — zero per-frame allocations
+
+6. **Fixed-ratio 3:2 kernels (v0.5.0)**
+   - At an exact 3:2 ratio the bilinear phases cycle with period 2 (copy / 50-50 blend), so the per-pixel table gather disappears: source rows are consumed contiguously and processed with vector instructions
+   - The nearest variant is pure copies and skips every third source row
+   - Same floor/50-50 rounding semantics as the generic paths, byte-exact against the scalar fallback
 
 ### Benchmarks
 
-Measured on i5-12450H (12 threads), 1920×1080 BGRA → RGBA frame (see `bench_test.go`):
+Measured on i5-12450H (12 threads), 1920×1080 BGRA source (see `bench_test.go`, `pkg/resize/ratio32_test.go`):
 
-| Operation | Sequential | Parallel | Sequential (reused dst) |
-|-----------|------------|----------|------------------------|
-| 1080p → 1080p (format swap only) | ~3.0 ms | ~1.0 ms | ~2.8 ms (0 allocs) |
-| 1080p → 720p, Nearest | ~2.1 ms | ~0.5 ms | 0 allocs |
-| 1080p → 720p, Bilinear | ~7.9 ms | ~2.0 ms | ~7.9 ms (0 allocs) |
+**Generic path (any resolution):**
 
-In a live 30 FPS stream the whole `ProcessFrameInto` stage takes ~1.0 ms (1080p original, performance mode) with zero allocations per frame.
+| Operation | Sequential | Parallel |
+|-----------|------------|----------|
+| 1080p → 1080p (format swap only, SIMD) | ~0.6 ms | ~0.6 ms (memory-bound) |
+| 1080p → 720p, Nearest | ~2.1 ms | ~0.5 ms |
+| 1080p → 720p, Bilinear | ~7.9 ms | ~2.0 ms |
+
+**Fixed-ratio 3:2 path (v0.5.0, 1080p → 720p, plan built once, resize kernel only, 0 allocs):**
+
+| Operation | Single core (AVX2) |
+|-----------|--------------------|
+| `Ratio32.Into` (bilinear) | **1.28 ms** |
+| `Ratio32.IntoNearest` | **0.87 ms** |
+
+In a live 30 FPS stream the whole `ProcessFrameInto` stage takes ~1.0 ms (1080p original, any performance mode) with zero allocations per frame; the 1080p → 720p pipeline with `Ratio32` + swap runs at ~1.9 ms per frame single-core (vs ~8.6 ms scalar on a weak machine).
 
 ### Recommendations for mode selection
 
@@ -221,6 +265,37 @@ func ResizeGenericInto(dst []byte, src []byte, srcW, srcH, stride, targetW, targ
 ```
 
 Low-level resize functions with full parameter control. `ResizeGenericInto` writes into the provided buffer.
+
+### `resize.NewRatio32` / `(*resize.Ratio32)` — fixed-ratio 3:2
+
+```go
+// Returns nil unless dstW/dstH are even, srcW == 3*dstW/2, srcH == 3*dstH/2
+// and stride >= srcW*4. Callers should fall back to ResizeGenericInto.
+func NewRatio32(srcW, srcH, stride, dstW, dstH int) *Ratio32
+
+// Fixed-ratio 3:2 bilinear (exact-ratio mapping, pavgb rounding).
+func (*Ratio32) Into(dst, src []byte)
+
+// Fixed-ratio 3:2 nearest (exact-ratio floor mapping, pure copies).
+func (*Ratio32) IntoNearest(dst, src []byte)
+```
+
+Build the plan once, reuse for every frame — zero allocations per call. Requires AVX2 for the fast path (automatic scalar fallback elsewhere). See the note about the exact-ratio mapping in the usage section.
+
+### `pkg/simd` — low-level SIMD swap
+
+```go
+// BGRA <-> RGBA byte swap: AVX2/SSE pshufb on amd64 (dispatched by the
+// caller), scalar fallback on other platforms.
+func SwapAVX2(src []byte, dst []byte)
+func SwapSSE(src []byte, dst []byte)
+
+// CPU feature reports (cached at package init).
+func HaveSSSE3() bool
+func HaveAVX2() bool
+```
+
+Used internally by `ProcessFrameInto`; exported for reuse in custom pipelines. `SwapAVX2`/`SwapSSE` process the aligned prefix of the buffers — handle the tail with a scalar swap.
 
 ### Conversion utilities
 
