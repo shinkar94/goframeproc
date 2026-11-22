@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.5.2 (uncommitted — under review)
+
+### Changed
+- **Toolchain requirement restored to go 1.24.0**: v0.5.1 unintentionally
+  bumped the go directive to 1.26.0 (`go mod tidy` picked the newest
+  x/sys v0.50.0, which itself requires go 1.26.0). v0.5.2 pins
+  `golang.org/x/sys v0.30.0` (HasSSSE3/HasAVX2 on windows/386 included)
+  and restores the go 1.24.0 directive. Consumers of v0.5.1 should
+  upgrade to v0.5.2.
+
 ## v0.5.1 (uncommitted — under review)
 
 ### Changed
