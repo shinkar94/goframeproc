@@ -6,13 +6,13 @@ import (
 
 type LookupTables struct {
 	X0            []int    // Original X indices
-    X1            []int    // X+1 indices for bilinear interpolation (with clamp)
-    FxFixed       []uint32 // Fixed point for X interpolation
+	X1            []int    // X+1 indices for bilinear interpolation (with clamp)
+	FxFixed       []uint32 // Fixed point for X interpolation
 	Y0            []int    // Source Y indices
-    Y1            []int    // Y+1 indices for bilinear interpolation (with clamp)
-    FyFixed       []uint32 // Fixed point for Y interpolation
+	Y1            []int    // Y+1 indices for bilinear interpolation (with clamp)
+	FyFixed       []uint32 // Fixed point for Y interpolation
 	SrcRowOffsets []int    // Row offsets in the source buffer
-    DstRowOffsets []int    // Row offsets in the destination buffer
+	DstRowOffsets []int    // Row offsets in the destination buffer
 
 	XByteOffsets  []int // X0 * BytesPerPixel
 	X1ByteOffsets []int // X1 * BytesPerPixel

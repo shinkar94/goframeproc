@@ -8,14 +8,14 @@ import (
 	"sync"
 
 	"github.com/shinkar94/goframeproc/pkg/constants"
-	"github.com/shinkar94/goframeproc/pkg/simd"
 	resize "github.com/shinkar94/goframeproc/pkg/resize"
+	"github.com/shinkar94/goframeproc/pkg/simd"
 )
 
 // Validation errors
 var (
-	ErrEmptyBuffer     = errors.New("buffer is empty")
-	ErrInvalidSize     = errors.New("invalid width or height")
+	ErrEmptyBuffer        = errors.New("buffer is empty")
+	ErrInvalidSize        = errors.New("invalid width or height")
 	ErrBufferSizeMismatch = errors.New("buffer size does not match resolution")
 )
 
@@ -27,7 +27,6 @@ type CompressionOptions struct {
 	Mode            resize.Mode
 	PerformanceMode string // saving | performance
 }
-
 
 func BGRAtoImage(buffer []byte, width, height int) (*image.RGBA, error) {
 	if err := validateInput(buffer, width, height); err != nil {

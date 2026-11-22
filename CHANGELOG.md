@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.5.1 (uncommitted — under review)
+
+### Changed
+- **Real CPU feature detection on windows/386** (`pkg/simd/cpu_386.go`): the
+  previous `!amd64` stub always reported `false`, while 386-class CPUs
+  (e.g. Silvermont Atoms) do support SSSE3/SSE4.2 — SSE paths were
+  permanently unavailable on windows/386. Detection now goes through
+  `golang.org/x/sys/cpu` (`X86.HasSSSE3` / `X86.HasAVX2`, OSXSAVE + XCR0
+  YMM-state included); amd64 keeps its asm-based detection. Prerequisite
+  for future 386 SIMD kernels; behavior-neutral for current amd64 paths.
+
+### Added
+- New dependency: `golang.org/x/sys` (the package's first external
+  dependency — the de-facto standard for OS/CPU interaction in Go).
+
+### Validated
+- windows/386 test binary (WOW64 on an i5): `SSSE3=true AVX2=true` —
+  detection consistency test against `x/sys/cpu` passes.
+
 ## v0.5.0 (uncommitted — under review)
 
 ### Added

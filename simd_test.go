@@ -1,8 +1,8 @@
 package frameproc
 
 import (
-	"encoding/binary"
 	"bytes"
+	"encoding/binary"
 	"testing"
 
 	"github.com/shinkar94/goframeproc/pkg/simd"
