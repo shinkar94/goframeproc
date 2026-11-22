@@ -101,6 +101,8 @@ func resizeRow(startY, endY int, params ResizeParams, tables *LookupTables) {
 
 	if params.Mode == Nearest {
 		resizeNearest(startY, endY, src, dst, srcLen, targetW, tables, isInputRGBA, isOutputRGBA)
+	} else if params.Mode == Box {
+		resizeBox(startY, endY, src, dst, params.SrcW, params.SrcH, params.Stride, targetW, params.TargetH, isInputRGBA, isOutputRGBA)
 	} else {
 		resizeBilinear(startY, endY, src, dst, srcLen, stride, targetW, tables, isInputRGBA, isOutputRGBA)
 	}

@@ -11,6 +11,7 @@ type Mode int
 const (
 	Nearest Mode = iota
 	Bilinear
+	Box
 )
 
 const BytesPerPixel = constants.BytesPerPixel

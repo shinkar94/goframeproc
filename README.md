@@ -1,6 +1,6 @@
 # GoFrameProc
 
-**Version:** v0.5.0
+**Version:** v0.6.0
 
 High-performance library for video frame processing in Go with support for resizing and pixel format conversion.
 
@@ -8,9 +8,10 @@ This package was specifically designed as a complementary addition to the [githu
 
 ## Features
 
-- **Image resizing** with two interpolation algorithms:
+- **Image resizing** with three interpolation algorithms:
   - `Nearest` — fast, no smoothing
   - `Bilinear` — high quality, with smooth transitions
+  - `Box` — area average; the aliasing-free choice for heavy downscales (>2×)
 - **Fixed-ratio 3:2 downscale** (`Ratio32`): libyuv-style SIMD kernels for the exact 3:2 ratio (1920×1080 → 1280×720 and any 3:2 multiples) — bilinear in 1.6 ms instead of 7.9 ms on one core, nearest in 1.3 ms (see Benchmarks)
 - **Pixel format conversion**: RGBA ↔ BGRA — native SIMD backend (AVX2/SSE `pshufb` with runtime CPU dispatch, scalar fallback), parallel word-swap in `performance` mode
 - **Resolution presets**: 320p, 420p, 720p, 1080p, original
@@ -22,7 +23,7 @@ This package was specifically designed as a complementary addition to the [githu
 ## Installation
 
 ```bash
-go get github.com/shinkar94/goframeproc@v0.5.0
+go get github.com/shinkar94/goframeproc@v0.6.0
 ```
 
 ## Usage
@@ -130,6 +131,9 @@ The general tradeoff: **smaller output frame → less CPU, memory and bandwidth,
 - **Resize Mode**:
   - `Nearest` — fastest, jagged edges on downscale
   - `Bilinear` — smooth result, ~3× slower
+  - `Box` — area average; the aliasing-free choice for heavy downscales
+    (>2×): preserves thin lines and text that bilinear decimation can skip
+    or fringe (ClearType subpixel speckle); ~1.5× slower than bilinear
 - **Performance Mode**:
   - `saving` — single core, minimal interference with other tasks (best for weak machines and background jobs)
   - `performance` — all cores (2–4× faster processing)

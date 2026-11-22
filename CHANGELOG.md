@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.6.0 (uncommitted — under review)
+
+### Added
+- **Box mode** (`resize.Box`): area-average resampling — each output pixel is the
+  average of the source rectangle it covers. At heavy downscales (>2x) it is
+  the aliasing-free filter: bilinear decimates and can skip thin lines entirely
+  (fine text/grid lines disappear or strobe), box preserves them as honest
+  averages. Verified visually on real screen content (3x downscale of a
+  1920x1080 DDA capture: ClearType subpixel fringing removed, text rows
+  coherent). At upscale Box degrades to nearest-like sampling — use Bilinear
+  there. Works with both strategies (rows are independent); no lookup tables
+  needed; zero allocations in steady state.
+- Benchmarks: `Benchmark720p_Box_seq` ~11.5 ms / `Benchmark720p_Box_par` ~2.9 ms / Into 0 allocs (i5-12450H, 720p).
+
+### Notes
+- Additive change: existing `Nearest`/`Bilinear` behavior is untouched.
+- Scalar implementation (identical on amd64/386); SIMD variant is a possible
+  follow-up.
+
 ## v0.5.2 (uncommitted — under review)
 
 ### Changed

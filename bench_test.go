@@ -85,3 +85,7 @@ func withGOMAXPROCS(b *testing.B, n int) func() {
 }
 
 func init() { fmt.Printf("default GOMAXPROCS=%d\n", runtime.GOMAXPROCS(0)) }
+
+func Benchmark720p_Box_seq(b *testing.B)      { benchProc(b, "720p", resize.Box, "saving") }
+func Benchmark720p_Box_par(b *testing.B)      { benchProc(b, "720p", resize.Box, "performance") }
+func BenchmarkInto_720p_Box_seq(b *testing.B) { benchProcInto(b, "720p", resize.Box, "saving") }
