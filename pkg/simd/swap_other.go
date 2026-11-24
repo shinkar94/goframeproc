@@ -1,8 +1,8 @@
-//go:build !amd64
+//go:build !amd64 && !386
 
 package simd
 
-// Portable fallback for non-amd64 targets.
+// Portable fallback for non-amd64/non-386 targets (386 has its own SSSE3-gated XMM path — swap_386.go).
 func SwapAVX2(src []byte, dst []byte) { scalarSwap(dst, src) }
 func SwapSSE(src []byte, dst []byte)  { scalarSwap(dst, src) }
 

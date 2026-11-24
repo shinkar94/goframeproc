@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.7.0 (2026-11-24)
+
+### Added
+- **Ratio21 — fixed-ratio 2:1 downscale** (`resize.Ratio21`): built for 16:10
+  panels (1280×800 → 640×400). `NewRatio21` + `Into` (pavgb bilinear, two
+  passes) / `IntoNearest` (floor-mapping pure copies) + `Ratio21Ref4Tap`
+  reference. At an exact 2:1 the ratio32 "sample at ratio*x" mapping would
+  degenerate to nearest, so Ratio21 uses the area-centered mapping instead:
+  each output pixel is the 50/50 blend of its 2×2 source block — the same
+  answer bilinear with {0.5, 0.5} weights gives. Exact ratio removes the
+  gather entirely (8 bytes in per 4 bytes out, zero allocations per frame;
+  vs the generic path's 2 MB of weight tables). Two-pass rounding stays
+  within 2 LSB of the 4-tap reference (measured max diff: 1 LSB).
+  SIMD on every tier: amd64 AVX2 (`h21AVX2`/`hn21AVX2` + shared pavgb
+  vertical), windows/386 SSSE3 XMM (`h21SSE386`/`hn21SSE386` + `avgSSE386`),
+  scalar elsewhere. Numbers: amd64 i5-12450H — Into 0.32 ms vs generic
+  bilinear 1.57 ms (×4.9, zero allocs); 386 WOW64 — 284 µs vs scalar
+  5.37 ms (×18.9), nearest 140 µs; real Atom Z3735F (same-run A/B through a
+  live stream): bilinear 4.98 ms vs 57.33 scalar (×11.5), nearest 3.98 ms,
+  PSNR 38.35 preserved.
+
+### Changed
+- **pkg/simd on windows/386**: `SwapAVX2`/`SwapSSE` no longer silently fall
+  back to a full scalar swap — an SSSE3 XMM `pshufb` kernel handles the
+  16-byte-aligned prefix (full-frame contract preserved on 386: scalar tail
+  inside, no-SSSE3 fallback intact, gate via x/sys/cpu). Measured on the
+  Atom Z3735F: full-size BGRA→RGBA conversion 16.8 → 4.8 ms (×3.5, same-run
+  A/B).
+
 ## v0.6.0 (uncommitted — under review)
 
 ### Added

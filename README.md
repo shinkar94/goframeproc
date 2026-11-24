@@ -1,6 +1,6 @@
 # GoFrameProc
 
-**Version:** v0.6.0
+**Version:** v0.7.0
 
 High-performance library for video frame processing in Go with support for resizing and pixel format conversion.
 
@@ -13,6 +13,7 @@ This package was specifically designed as a complementary addition to the [githu
   - `Bilinear` — high quality, with smooth transitions
   - `Box` — area average; the aliasing-free choice for heavy downscales (>2×)
 - **Fixed-ratio 3:2 downscale** (`Ratio32`): libyuv-style SIMD kernels for the exact 3:2 ratio (1920×1080 → 1280×720 and any 3:2 multiples) — bilinear in 1.6 ms instead of 7.9 ms on one core, nearest in 1.3 ms (see Benchmarks)
+- **Fixed-ratio 2:1 downscale** (`Ratio21`): for 16:10 sources (1280×800 → 640×400 and any exact 2:1) — bilinear in 0.32 ms, nearest in 0.14 ms on one core (amd64 AVX2); real XMM kernels on windows/386 too (SSSE3, ×18.9 vs scalar)
 - **Pixel format conversion**: RGBA ↔ BGRA — native SIMD backend (AVX2/SSE `pshufb` with runtime CPU dispatch, scalar fallback), parallel word-swap in `performance` mode
 - **Resolution presets**: 320p, 420p, 720p, 1080p, original
 - **Two performance strategies**:
@@ -214,6 +215,15 @@ Measured on i5-12450H (12 threads), 1920×1080 BGRA source (see `bench_test.go`,
 |-----------|--------------------|
 | `Ratio32.Into` (bilinear) | **1.28 ms** |
 | `Ratio32.IntoNearest` | **0.87 ms** |
+
+**Fixed-ratio 2:1 path (v0.7.0, 1280×800 → 640×400, plan built once, 0 allocs):**
+
+| Operation | amd64 (AVX2) | windows/386 (SSSE3 XMM) |
+|-----------|--------------|--------------------------|
+| `Ratio21.Into` (bilinear) | **0.32 ms** | **0.28 ms** |
+| `Ratio21.IntoNearest` | **0.14 ms** | **0.14 ms** |
+
+On a real Silvermont tablet (Atom Z3735F, same-run A/B in a live stream): fr21 bilinear 4.98 ms vs 57.33 ms scalar (×11.5), full-size BGRA→RGBA swap 4.8 ms vs 16.8 ms scalar (×3.5).
 
 In a live 30 FPS stream the whole `ProcessFrameInto` stage takes ~1.0 ms (1080p original, any performance mode) with zero allocations per frame; the 1080p → 720p pipeline with `Ratio32` + swap runs at ~1.9 ms per frame single-core (vs ~8.6 ms scalar on a weak machine).
 
