@@ -1,0 +1,42 @@
+name: CI
+
+# Runs on every push and PR: format check, vet, tests on amd64, tests on
+# windows/386 (WOW64 on the runner executes 32-bit test binaries — this is
+# what exercises the SSSE3 XMM asm paths) and a build check for windows/386.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt
+        run: test -z "$(gofmt -l .)"
+        shell: bash
+
+      - name: vet
+        run: go vet ./...
+
+      - name: test (amd64)
+        run: go test ./...
+
+      - name: test (windows/386 via WOW64)
+        run: go test ./...
+        env:
+          GOARCH: "386"
+
+      - name: build check (windows/386)
+        run: go build ./...
+        env:
+          GOARCH: "386"

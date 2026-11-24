@@ -1,0 +1,42 @@
+name: Release
+
+# Tag-driven release: pushing a tag v* runs the same gates as CI and creates
+# a GitHub Release with auto-generated notes. No binary artifacts are
+# attached — this is a Go library, the module proxy distributes tags.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: vet
+        run: go vet ./...
+
+      - name: test (amd64)
+        run: go test ./...
+
+      - name: test (windows/386 via WOW64)
+        run: go test ./...
+        env:
+          GOARCH: "386"
+
+      - name: build check (windows/386)
+        run: go build ./...
+        env:
+          GOARCH: "386"
+
+      - name: create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
