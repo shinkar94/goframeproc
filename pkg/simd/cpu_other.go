@@ -5,4 +5,5 @@ package simd
 // Non-x86 builds (arm, arm64, ...): no SSE features — scalar fallbacks.
 
 func HaveSSSE3() bool { return false }
+func HaveSSE41() bool { return false }
 func HaveAVX2() bool  { return false }

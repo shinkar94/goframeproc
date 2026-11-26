@@ -12,11 +12,19 @@ func xgetbv0() (low, high uint32)
 var (
 	haveSSSE3 = detectSSSE3()
 	haveAVX2  = detectAVX2()
+	haveSSE41 = detectSSE41()
 )
 
 func detectSSSE3() bool {
 	_, _, ecx, _ := cpuid(1, 0)
 	return ecx&(1<<9) != 0
+}
+
+// detectSSE41 reports SSE4.1 (PMOVZXBW widening) — needed by pkg/yuv in
+// addition to SSSE3's pshufb.
+func detectSSE41() bool {
+	_, _, ecx, _ := cpuid(1, 0)
+	return ecx&(1<<19) != 0
 }
 
 // detectAVX2 reports AVX2 support with OS YMM state enabled (XGETBV).
@@ -38,6 +46,9 @@ func detectAVX2() bool {
 
 // HaveSSSE3 reports SSSE3 support (pshufb).
 func HaveSSSE3() bool { return haveSSSE3 }
+
+// HaveSSE41 reports SSE4.1 support (PMOVZXBW widening).
+func HaveSSE41() bool { return haveSSE41 }
 
 // HaveAVX2 reports AVX2 support with OS YMM state enabled.
 func HaveAVX2() bool { return haveAVX2 }

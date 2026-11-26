@@ -1,6 +1,6 @@
 # GoFrameProc
 
-**Version:** v0.7.0
+**Version:** v0.8.0
 
 High-performance library for video frame processing in Go with support for resizing and pixel format conversion.
 
@@ -15,6 +15,7 @@ This package was specifically designed as a complementary addition to the [githu
 - **Fixed-ratio 3:2 downscale** (`Ratio32`): libyuv-style SIMD kernels for the exact 3:2 ratio (1920×1080 → 1280×720 and any 3:2 multiples) — bilinear in 1.6 ms instead of 7.9 ms on one core, nearest in 1.3 ms (see Benchmarks)
 - **Fixed-ratio 2:1 downscale** (`Ratio21`): for 16:10 sources (1280×800 → 640×400 and any exact 2:1) — bilinear in 0.32 ms, nearest in 0.14 ms on one core (amd64 AVX2); real XMM kernels on windows/386 too (SSSE3, ×18.9 vs scalar)
 - **Pixel format conversion**: RGBA ↔ BGRA — native SIMD backend (AVX2/SSE `pshufb` with runtime CPU dispatch, scalar fallback), parallel word-swap in `performance` mode
+- **BGRA → NV12 conversion** (`pkg/yuv`): the bridge from desktop capture to H.264 encoders — BT.601 video-range, rounded 2×2 box chroma, SSE4.1 XMM kernels on amd64 and windows/386 (byte-exact with the scalar spec), ×4.1–4.8 vs scalar, zero allocations per frame
 - **Resolution presets**: 320p, 420p, 720p, 1080p, original
 - **Two performance strategies**:
   - `SequentialResizeStrategy` — single-threaded (CPU efficient)
@@ -24,7 +25,7 @@ This package was specifically designed as a complementary addition to the [githu
 ## Installation
 
 ```bash
-go get github.com/shinkar94/goframeproc@v0.6.0
+go get github.com/shinkar94/goframeproc@v0.8.0
 ```
 
 ## Usage
@@ -157,13 +158,17 @@ goframeproc/
 │   │   ├── cpu_amd64.go     # Cached CPU feature detection (CPUID + XGETBV at init)
 │   │   ├── swap_amd64.go/.s # SIMD BGRA->RGBA swap (AVX2/SSE pshufb, scalar fallback)
 │   │   └── swap_other.go    # Portable fallbacks
-│   └── resize/
-│       ├── resize.go         # Entry point ResizeGeneric / ResizeGenericInto
-│       ├── resize-common.go  # Core: interpolation, lookup tables
-│       ├── ratio32*.go/.s    # Fixed-ratio 3:2 SIMD kernels (bilinear + nearest)
-│       ├── resize_test.go    # Interpolation unit tests
-│       ├── ratio32_test.go   # Fixed-ratio regression tests and benchmarks
-│       └── types.go          # Types and interfaces
+│   ├── resize/
+│   │   ├── resize.go         # Entry point ResizeGeneric / ResizeGenericInto
+│   │   ├── resize-common.go  # Core: interpolation, lookup tables
+│   │   ├── ratio32*.go/.s    # Fixed-ratio 3:2 SIMD kernels (bilinear + nearest)
+│   │   ├── resize_test.go    # Interpolation unit tests
+│   │   ├── ratio32_test.go   # Fixed-ratio regression tests and benchmarks
+│   │   └── types.go          # Types and interfaces
+│   └── yuv/
+│       ├── nv12*.go/.s       # BGRA -> NV12 conversion (SSE4.1 XMM kernels + scalar spec)
+│       ├── nv12_test.go      # Byte-exact dispatch/asm pinning tests
+│       └── bench_nv12_test.go # Benchmarks
 ```
 
 ## Performance
@@ -224,6 +229,14 @@ Measured on i5-12450H (12 threads), 1920×1080 BGRA source (see `bench_test.go`,
 | `Ratio21.IntoNearest` | **0.14 ms** | **0.14 ms** |
 
 On a real Silvermont tablet (Atom Z3735F, same-run A/B in a live stream): fr21 bilinear 4.98 ms vs 57.33 ms scalar (×11.5), full-size BGRA→RGBA swap 4.8 ms vs 16.8 ms scalar (×3.5).
+
+**BGRA → NV12 (v0.8.0, plan built once, kernel only, 0 allocs):**
+
+| Operation | amd64 (SSE4.1 XMM) | windows/386 (same kernel) |
+|-----------|--------------------|---------------------------|
+| 1920×1080 | **1.32 ms** (scalar 5.37 ms, ×4.1) | **1.38 ms** (×4.1) |
+| 1280×800  | **0.56 ms** (scalar 2.71 ms, ×4.8) | **0.58 ms** (×4.7) |
+| 640×400   | **0.15 ms** (×4.5) | **0.14 ms** (×4.7) |
 
 In a live 30 FPS stream the whole `ProcessFrameInto` stage takes ~1.0 ms (1080p original, any performance mode) with zero allocations per frame; the 1080p → 720p pipeline with `Ratio32` + swap runs at ~1.9 ms per frame single-core (vs ~8.6 ms scalar on a weak machine).
 
@@ -296,6 +309,26 @@ func (*Ratio32) IntoNearest(dst, src []byte)
 
 Build the plan once, reuse for every frame — zero allocations per call. Requires AVX2 for the fast path (automatic scalar fallback elsewhere). See the note about the exact-ratio mapping in the usage section.
 
+### `pkg/yuv` — BGRA → NV12
+
+```go
+// Returns nil unless w/h are even and positive and stride >= 4*w.
+func NewNV12(w, h, stride int) *NV12
+
+// Required dst length: w*(h + h/2) — packed Y plane then interleaved UV.
+func (*NV12) Size() int
+
+// Convert one BGRA frame into dst (zero allocations per frame).
+func (*NV12) Into(dst, src []byte)
+
+// Portable scalar reference (the SIMD path is byte-exact with it).
+func ScalarBGRAtoNV12(dst, src []byte, w, h, stride int)
+```
+
+BT.601 video-range with rounded shifts; chroma is a rounded 2×2 box average
+computed before the color formulas. SSE4.1 XMM kernels on amd64 and
+windows/386 (the same kernel twin); scalar fallback on CPUs without SSE4.1.
+
 ### `pkg/simd` — low-level SIMD swap
 
 ```go
@@ -306,6 +339,7 @@ func SwapSSE(src []byte, dst []byte)
 
 // CPU feature reports (cached at package init).
 func HaveSSSE3() bool
+func HaveSSE41() bool
 func HaveAVX2() bool
 ```
 

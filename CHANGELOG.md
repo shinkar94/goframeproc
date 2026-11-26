@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.8.0 (2026-11-27)
+
+### Added
+- **pkg/yuv — BGRA→NV12 conversion** (`yuv.NewNV12` + `Into`): the bridge
+  from desktop capture (BGRA) to H.264 encoders (NV12). BT.601 video-range
+  with rounded shifts; chroma is a rounded 2×2 box average computed before
+  the color formulas — results stay in [16..235]/[16..240], no clamps.
+  Plan-based API: build once, `Into` per frame — zero allocations. SSE4.1
+  XMM kernels (pshufb + PMOVZXBW + PMADDWD, exact s32 math) byte-exact
+  against the scalar spec on every block-boundary width (pinned by tests);
+  scalar fallback elsewhere; amd64 and windows/386 share the same kernel
+  twin. Numbers (same-run pairs, i5-12450H): 1080p 5.37 → 1.32 ms (×4.1),
+  720p 2.44 → 0.52 ms (×4.7), 1280×800 2.71 → 0.56 ms (×4.8), 640×400
+  0.66 → 0.15 ms (×4.5); windows/386 WOW64 ×4.1–4.7; ~8.3–10 GB/s.
+- **`simd.HaveSSE41`**: SSE4.1 feature report (CPUID bit 19 on amd64,
+  x/sys/cpu on windows/386). The yuv kernels use PMOVZXBW (SSE4.1) on top
+  of SSSE3's pshufb; SSSE3-only CPUs (Merom-class) fall back to scalar,
+  Silvermont tablets (SSE4.2) pass.
+
 ## v0.7.0 (2026-11-24)
 
 ### Added
@@ -29,7 +48,7 @@
   Atom Z3735F: full-size BGRA→RGBA conversion 16.8 → 4.8 ms (×3.5, same-run
   A/B).
 
-## v0.6.0 (uncommitted — under review)
+## v0.6.0 (2026-11-22)
 
 ### Added
 - **Box mode** (`resize.Box`): area-average resampling — each output pixel is the
